@@ -21,7 +21,6 @@ import           Text.XML.Light
 modelTestRatio :: Double
 modelTestRatio = 0.9
 
-
 ------------------------------------------------------------------------
 --  types
 ------------------------------------------------------------------------
@@ -29,7 +28,6 @@ type Word = String
 type Sentence = [Word]
 type Bigram = (Word, Word)
 type Frequencies = Map.Map (Word, Word) Integer
-
 
 ------------------------------------------------------------------------
 --  test data
