@@ -58,8 +58,10 @@ learn_observations state_prob = M.mapWithKey (\ (observation, state) prob -> pro
                             . histogram
 
 histogram :: (Ord a, Fractional prob) => [a] -> M.Map a prob
-histogram xs = let hist = foldr (flip (M.insertWith (+)) 1) M.empty xs in
-                M.map (/ M.fold (+) 0 hist) hist
+histogram xs =
+  let hist = foldr (flip (M.insertWith (+)) 1) M.empty xs
+      totalSum = M.foldr (+) 0 hist
+  in M.map (/ totalSum) hist
 
 -- | Calculate the parameters of an HMM from a list of observations
 --   and the corresponding states.
