@@ -2,7 +2,7 @@ module Main where
 
 import           Control.Applicative
 import qualified Data.List             as List ()
-import qualified Data.Map              as Map
+import qualified Data.Map              as M
 import           System.Directory      (getCurrentDirectory,
                                         getDirectoryContents)
 import           System.Environment
@@ -25,21 +25,34 @@ modelTestRatio = 0.9
 --  types
 ------------------------------------------------------------------------
 type Word = String
+type Tag = String
+type TaggedWord = (Word, Tag)
 type Sentence = [Word]
-type Bigram = (Word, Word)
-type Frequencies = Map.Map (Word, Word) Integer
+type TaggedSentence = [TaggedWord]
+type Bigram = (Tag, Tag)
+type Frequencies = M.Map (Word, Word) Integer
+type TagTransitionProbs = M.Map (Tag, Tag) Double
+type WordLikelihoodProbs = M.Map (Word, Tag) Double
+type TagHistogram = M.Map Tag Double
+type WordTagHistogram = M.Map (Word, Tag) Double
+
+
+------------------------------------------------------------------------
+--  Hidden Markov Model
+------------------------------------------------------------------------
+data HMM = HMM TagTransitionProbs WordLikelihoodProbs deriving(Show)
 
 ------------------------------------------------------------------------
 --  test data
 ------------------------------------------------------------------------
-testSentence :: Sentence
-testSentence = ["Ein", "Haus", "im", "Wald"]
+testSentence :: TaggedSentence
+testSentence = [("Ein", "NN"), ("Haus", "VB"), ("im", "PR"), ("Wald", "NN")]
 testSentence1 :: Sentence
 testSentence1 = ["Alles", "Klar", "Ein", "Haus"]
-testSentences :: [Sentence]
-testSentences = [testSentence, testSentence1]
-testFrequencies :: Frequencies
-testFrequencies = Map.fromList [(("a", "a"), 0),(("b", "b"), 2), (("c", "c"), 1)]
+-- testSentences :: [Sentence]
+-- testSentences = [testSentence, testSentence1]
+-- testFrequencies :: Frequencies
+-- testFrequencies = Map.fromList [(("a", "a"), 0),(("b", "b"), 2), (("c", "c"), 1)]
 
 
 ------------------------------------------------------------------------
@@ -49,7 +62,7 @@ testFrequencies = Map.fromList [(("a", "a"), 0),(("b", "b"), 2), (("c", "c"), 1)
 -- corpusPath = "corpus/"
 
 isRegularFile :: FilePath -> Bool
-isRegularFile f = f /= "." && f /= ".." && (takeExtension f) == ".xml"
+isRegularFile f = f /= "." && f /= ".." && takeExtension f == ".xml"
 
 -- | read dir
 readDir :: String -> IO [FilePath]
@@ -69,38 +82,35 @@ parseXml source =
 
 
 ------------------------------------------------------------------------
---  perplexity calculation
+--  Train
+--  Calculating parameters of Hidden Markov Model
 ------------------------------------------------------------------------
 
-bigrams :: Sentence -> [(Word, Word)]
-bigrams sentence = zip sentence $ tail sentence
+train :: [TaggedSentence] -> HMM
+train taggedSentences = model
+    where
+      taggedWords = concat taggedSentences
+      tagHistogram = histogram $ map snd taggedWords
+      tagBigramHistogram = histogram $ concatMap (bigrams . map snd) taggedSentences
+      wordTagHistogram = histogram taggedWords
+      transitionProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
+      wordLikelihoodProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
+      model = HMM transitionProbs wordLikelihoodProbs
 
-frequencePerCorups :: [Sentence] -> Frequencies
-frequencePerCorups = foldl (Map.unionWith (+)) Map.empty . map frequenciesPerSentence
+histogram :: (Ord a, Fractional prob) => [a] -> M.Map a prob
+histogram = foldr (flip (M.insertWith (+)) 1) M.empty
 
-frequenciesPerSentence :: Sentence -> Frequencies
-frequenciesPerSentence sentence =
-  let
-    unigramFrequencies = foldl (\ f x -> Map.insertWith (+) (x, "_") 1 f) Map.empty sentence
-    bigramFrequencies = foldl (\ f x -> Map.insertWith (+) x 1 f) Map.empty $ bigrams sentence
-  in
-    Map.unionWith (+) bigramFrequencies unigramFrequencies
+bigrams :: [Tag] -> [(Tag, Tag)]
+bigrams tags = zip tags $ tail tags
 
-lookupFrequency :: Frequencies -> Bigram -> Integer
-lookupFrequency frequencies bigram =
-  Map.findWithDefault 0 bigram frequencies + 1
-
-perplexity :: Frequencies -> Sentence -> Double
-perplexity frequencies sentence =
-  let
-    probability = fromInteger . lookupFrequency frequencies
-    calc bigram@(_, w2) = probability bigram / probability (w2, "_")
-    p = product $ map calc $ bigrams sentence
-    size = fromIntegral $ length sentence - 1
-  in
-    p ** (-1/size)
+lookupHistogram :: (Ord k, Num v) => M.Map k v -> k -> v
+lookupHistogram hist key =
+  M.findWithDefault 0 key hist + 1
 
 
+------------------------------------------------------------------------
+--  Train-Test model separation
+------------------------------------------------------------------------
 splitIntoModelAndTest :: [a] -> ([a], [a])
 splitIntoModelAndTest x = (take modelSize x, drop modelSize x)
    where len = fromIntegral $ length x
@@ -125,9 +135,6 @@ main = do
   let (model, test) = splitIntoModelAndTest contents
       modelSentences = concatMap parseXml model
       testModelSentences = concatMap parseXml test
-      frequencies = frequencePerCorups modelSentences
-      perplexities = map (perplexity frequencies) testModelSentences
-  putStr "Perplexity: "
-  print $ sum perplexities / (fromIntegral $ length perplexities)
+  putStr "precision: "
 
 
