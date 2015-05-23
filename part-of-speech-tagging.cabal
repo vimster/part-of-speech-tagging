@@ -28,6 +28,7 @@ executable part-of-speech-tagging
                        random-shuffle,
                        random,
                        filepath,
+                       array,
                        data-memocombinators, 
                        xml
 

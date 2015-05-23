@@ -1,17 +1,19 @@
 module Main where
 
 import           Control.Applicative
-import qualified Data.List             as List ()
-import qualified Data.Map              as M
-import           System.Directory      (getCurrentDirectory,
-                                        getDirectoryContents)
+import           Data.Array
+import qualified Data.List                  as List ()
+import qualified Data.Map                   as M
+import qualified Data.MemoCombinators       as Memo
+import           Data.MemoCombinators.Class
+import           System.Directory           (getCurrentDirectory,
+                                             getDirectoryContents)
 import           System.Environment
 import           System.FilePath
-import           System.IO             ()
-import           System.Random         (newStdGen)
-import qualified System.Random.Shuffle as Shuffler
+import           System.IO                  ()
+import           System.Random              (newStdGen)
+import qualified System.Random.Shuffle      as Shuffler
 import           Text.XML.Light
-import qualified Data.MemoCombinators as Memo
 
 -- import Debug.Trace
 --
@@ -113,12 +115,50 @@ lookupHistogram hist key =
 --  Viterbi
 ------------------------------------------------------------------------
 
-viterbi :: Integer -> Integer
-viterbi = Memo.integral viterbi'
+fib :: Integer -> Integer
+fib = Memo.integral fib'
     where
-    viterbi' 0 = 0
-    viterbi' 1 = 1
-    viterbi' n = viterbi (n-1) + viterbi (n-2)
+    fib' 0 = 0
+    fib' 1 = 1
+    fib' n = fib (n-1) + fib (n-2)
+
+
+-- -- | Perform a single step in the Viterbi algorithm.
+-- --
+-- --   Takes a list of path probabilities, and an observation, and returns the updated
+-- --   list of (surviving) paths with probabilities.
+-- viterbi :: HMM -> [(Double, [Tag])] -> Word -> [(Double, [Tag])]
+-- viterbi (HMM a b) prev x =
+--     [maximumBy (compare `on` fst)
+--             [(transition_prob * prev_prob * observation_prob,
+--                new_state:path)
+--                     | transition_prob <- transition_probs
+--                     | (prev_prob, path) <- prev
+--                     | observation_prob <- observation_probs]
+--         | transition_probs <- state_transitions
+--         | new_state <- states]
+--     where
+--         observation_probs = observations x
+
+
+-- -- | The initial value for the Viterbi algorithm
+-- viterbi_init :: HMM -> [(Double, [Tag])]
+-- viterbi_init (HMM _ _) = zip [0..] (map (:[]) [1..10])
+
+-- -- | Calculate the most likely sequence of states for a given sequence of observations
+-- --   using Viterbi's algorithm
+-- bestSequence :: (Ord observation) => HMM state observation -> [observation] -> [state]
+-- bestSequence hmm = (reverse . tail . snd . (maximumBy (compare `on` fst))) . (foldl (viterbi hmm) (viterbi_init hmm))
+
+
+viterbi :: [Tag] -> HMM -> Sentence -> Double
+viterbi tags hmm sentence = fromIntegral $ fst $ head $ map (\i -> matrix!(sentLen-1,i)) [0..tagLen]
+  where
+    sentLen = length sentence
+    tagLen = length tags
+    matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- [0..sentLen], y <- [0..tagLen]]
+    prob x y = (1, "NN")
+    traceback (_, tag) = 2
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
