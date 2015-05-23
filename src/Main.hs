@@ -11,6 +11,7 @@ import           System.IO             ()
 import           System.Random         (newStdGen)
 import qualified System.Random.Shuffle as Shuffler
 import           Text.XML.Light
+import qualified Data.MemoCombinators as Memo
 
 -- import Debug.Trace
 --
@@ -107,6 +108,17 @@ lookupHistogram :: (Ord k, Num v) => M.Map k v -> k -> v
 lookupHistogram hist key =
   M.findWithDefault 0 key hist + 1
 
+
+------------------------------------------------------------------------
+--  Viterbi
+------------------------------------------------------------------------
+
+viterbi :: Integer -> Integer
+viterbi = Memo.integral viterbi'
+    where
+    viterbi' 0 = 0
+    viterbi' 1 = 1
+    viterbi' n = viterbi (n-1) + viterbi (n-2)
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
