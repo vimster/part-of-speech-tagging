@@ -43,7 +43,7 @@ type WordTagHistogram = M.Map (Word, Tag) Double
 ------------------------------------------------------------------------
 --  Hidden Markov Model
 ------------------------------------------------------------------------
-data HMM = HMM TagTransitionProbs WordLikelihoodProbs deriving(Show)
+data HMM = HMM [Tag] TagTransitionProbs WordLikelihoodProbs deriving(Show)
 
 ------------------------------------------------------------------------
 --  test data
@@ -98,7 +98,7 @@ train taggedSentences = model
       wordTagHistogram = histogram taggedWords
       transitionProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
       wordLikelihoodProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
-      model = HMM transitionProbs wordLikelihoodProbs
+      model = HMM (M.keys tagHistogram) transitionProbs wordLikelihoodProbs
 
 histogram :: (Ord a, Fractional prob) => [a] -> M.Map a prob
 histogram = foldr (flip (M.insertWith (+)) 1) M.empty
@@ -151,14 +151,14 @@ fib = Memo.integral fib'
 -- bestSequence hmm = (reverse . tail . snd . (maximumBy (compare `on` fst))) . (foldl (viterbi hmm) (viterbi_init hmm))
 
 
-viterbi :: [Tag] -> HMM -> Sentence -> Double
-viterbi tags hmm sentence = fromIntegral $ fst $ head $ map (\i -> matrix!(sentLen-1,i)) [0..tagLen]
-  where
-    sentLen = length sentence
-    tagLen = length tags
-    matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- [0..sentLen], y <- [0..tagLen]]
-    prob x y = (1, "NN")
-    traceback (_, tag) = 2
+viterbi :: HMM -> Sentence -> Double
+viterbi (HMM tags transitionProbs wordProbs) sentence =
+  fromIntegral $ fst $ head $ map (\i -> matrix!(sentLen-1,i)) [0..tagLen]
+    where
+      sentLen = length sentence
+      tagLen = length tags
+      matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- [0..sentLen], y <- [0..tagLen]]
+      traceback (_, tag) = 2
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
