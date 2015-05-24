@@ -2,7 +2,8 @@ module Main where
 
 import           Control.Applicative
 import           Data.Array
-import qualified Data.List                  as List ()
+import           Data.List                  (maximumBy)
+import           Data.List.Extras.Argmax
 import qualified Data.Map                   as M
 import qualified Data.MemoCombinators       as Memo
 import           Data.MemoCombinators.Class
@@ -151,15 +152,25 @@ fib = Memo.integral fib'
 -- bestSequence hmm = (reverse . tail . snd . (maximumBy (compare `on` fst))) . (foldl (viterbi hmm) (viterbi_init hmm))
 
 
-viterbi :: HMM -> Sentence -> Double
-viterbi (HMM tags transitionProbs wordProbs) sentence =
-  fromIntegral $ fst $ head $ map (\i -> matrix!(sentLen-1,i)) [0..tagLen]
+on f g a b = f (g a) (g b)
+
+viterbi :: HMM -> Sentence -> [Tag]
+viterbi (HMM tags transitionPr wordPr) sentence =
+  traceback [] (maximumBy (compare `on` snd) $ map (\ti -> matrix!(sentLen-1, ti)) tagRange) sentLen-1
     where
       sentLen = length sentence
       tagLen = length tags
-      matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- [0..sentLen], y <- [0..tagLen]]
-      prob si ti = wordProbs!(sentence!si, tags!ti) * maximumBy (compare `on` fst) (transitionProbs!(tags!ti, tags!(ti-1)))
-      traceback (_, tag) = 2
+      tagRange = [0..tagLen]
+      sentRange = [0..sentLen]
+      matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- sentRange, y <- tagRange]
+      prob :: Int -> Int -> (Integer, Double)
+      prob 0 _ = (0, 1)
+      prob si ti = (fst tagMax, snd tagMax * (wordPr!(sentence!!si, tags!!ti)))
+        where tagMax = tagmax si ti
+      tagmax si ti = argmaxWithMax (\y -> (transitionPr!(tags!!ti, tags!!y)) * snd matrix!(si-1, y)) tagRange
+      traceback :: [Tag] -> (Int, Double) -> Int -> [Tag]
+      traceback resultTags _ 0 = resultTags
+      traceback resultTags (ti, _) index = traceback (tags!!ti):resultTags matrix!(index, ti) index-1
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
