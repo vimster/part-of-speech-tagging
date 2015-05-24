@@ -7,6 +7,7 @@ import           Data.List.Extras.Argmax
 import qualified Data.Map                   as M
 import qualified Data.MemoCombinators       as Memo
 import           Data.MemoCombinators.Class
+import           Data.Ord
 import           System.Directory           (getCurrentDirectory,
                                              getDirectoryContents)
 import           System.Environment
@@ -16,7 +17,7 @@ import           System.Random              (newStdGen)
 import qualified System.Random.Shuffle      as Shuffler
 import           Text.XML.Light
 
--- import Debug.Trace
+import           Debug.Trace
 --
 
 ------------------------------------------------------------------------
@@ -116,61 +117,24 @@ lookupHistogram hist key =
 --  Viterbi
 ------------------------------------------------------------------------
 
-fib :: Integer -> Integer
-fib = Memo.integral fib'
-    where
-    fib' 0 = 0
-    fib' 1 = 1
-    fib' n = fib (n-1) + fib (n-2)
-
-
--- -- | Perform a single step in the Viterbi algorithm.
--- --
--- --   Takes a list of path probabilities, and an observation, and returns the updated
--- --   list of (surviving) paths with probabilities.
--- viterbi :: HMM -> [(Double, [Tag])] -> Word -> [(Double, [Tag])]
--- viterbi (HMM a b) prev x =
---     [maximumBy (compare `on` fst)
---             [(transition_prob * prev_prob * observation_prob,
---                new_state:path)
---                     | transition_prob <- transition_probs
---                     | (prev_prob, path) <- prev
---                     | observation_prob <- observation_probs]
---         | transition_probs <- state_transitions
---         | new_state <- states]
---     where
---         observation_probs = observations x
-
-
--- -- | The initial value for the Viterbi algorithm
--- viterbi_init :: HMM -> [(Double, [Tag])]
--- viterbi_init (HMM _ _) = zip [0..] (map (:[]) [1..10])
-
--- -- | Calculate the most likely sequence of states for a given sequence of observations
--- --   using Viterbi's algorithm
--- bestSequence :: (Ord observation) => HMM state observation -> [observation] -> [state]
--- bestSequence hmm = (reverse . tail . snd . (maximumBy (compare `on` fst))) . (foldl (viterbi hmm) (viterbi_init hmm))
-
-
-on f g a b = f (g a) (g b)
-
 viterbi :: HMM -> Sentence -> [Tag]
 viterbi (HMM tags transitionPr wordPr) sentence =
-  traceback [] (maximumBy (compare `on` snd) $ map (\ti -> matrix!(sentLen-1, ti)) tagRange) sentLen-1
+  traceback [] (maximumBy (comparing snd) $ map (\ti -> matrix!(sentLen-1, ti)) tagRange) (sentLen-1)
     where
       sentLen = length sentence
       tagLen = length tags
-      tagRange = [0..tagLen]
-      sentRange = [0..sentLen]
-      matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- sentRange, y <- tagRange]
-      prob :: Int -> Int -> (Integer, Double)
+      tagRange = [0..tagLen-1]
+      sentRange = [0..sentLen-1]
+      matrix = trace ("tags = " ++ show sentence) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [prob x y | x <- sentRange, y <- tagRange]
+      prob :: Int -> Int -> (Int, Double)
       prob 0 _ = (0, 1)
-      prob si ti = (fst tagMax, snd tagMax * (wordPr!(sentence!!si, tags!!ti)))
+      prob si ti = (fst tagMax, snd tagMax * M.findWithDefault 0 (sentence!!si, tags!!ti) wordPr)
         where tagMax = tagmax si ti
-      tagmax si ti = argmaxWithMax (\y -> (transitionPr!(tags!!ti, tags!!y)) * snd matrix!(si-1, y)) tagRange
+      tagmax :: Int -> Int -> (Int, Double)
+      tagmax si ti = argmaxWithMax (\y -> M.findWithDefault 0 (tags!!ti, tags!!y) transitionPr * snd (matrix!(si-1, y))) tagRange
       traceback :: [Tag] -> (Int, Double) -> Int -> [Tag]
-      traceback resultTags _ 0 = resultTags
-      traceback resultTags (ti, _) index = traceback (tags!!ti):resultTags matrix!(index, ti) index-1
+      traceback resultTags _ 0 = reverse resultTags
+      traceback resultTags (ti, _) index = traceback ((tags!!ti):resultTags) (matrix!(index, ti)) (index-1)
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
