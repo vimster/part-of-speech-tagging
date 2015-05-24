@@ -36,8 +36,8 @@ type Sentence = [Word]
 type TaggedSentence = [TaggedWord]
 type Bigram = (Tag, Tag)
 type Frequencies = M.Map (Word, Word) Integer
-type TagTransitionProbs = M.Map (Tag, Tag) Double
-type WordLikelihoodProbs = M.Map (Word, Tag) Double
+type TagTransitionPr = M.Map (Tag, Tag) Double
+type WordLikelihoodPr = M.Map (Word, Tag) Double
 type TagHistogram = M.Map Tag Double
 type WordTagHistogram = M.Map (Word, Tag) Double
 
@@ -45,19 +45,15 @@ type WordTagHistogram = M.Map (Word, Tag) Double
 ------------------------------------------------------------------------
 --  Hidden Markov Model
 ------------------------------------------------------------------------
-data HMM = HMM [Tag] TagTransitionProbs WordLikelihoodProbs deriving(Show)
+data HMM = HMM [Tag] TagTransitionPr WordLikelihoodPr deriving(Show)
 
 ------------------------------------------------------------------------
 --  test data
 ------------------------------------------------------------------------
 testSentence :: TaggedSentence
-testSentence = [("Ein", "NN"), ("Haus", "VB"), ("im", "PR"), ("Wald", "NN")]
+testSentence = [("<s>", "<s>"), ("Ein", "PR"), ("Haus", "NN"), ("im", "PR"), ("Wald", "NN")]
 testSentence1 :: Sentence
 testSentence1 = ["Alles", "Klar", "Ein", "Haus"]
--- testSentences :: [Sentence]
--- testSentences = [testSentence, testSentence1]
--- testFrequencies :: Frequencies
--- testFrequencies = Map.fromList [(("a", "a"), 0),(("b", "b"), 2), (("c", "c"), 1)]
 
 
 ------------------------------------------------------------------------
@@ -98,11 +94,11 @@ train taggedSentences = model
       tagHistogram = histogram $ map snd taggedWords
       tagBigramHistogram = histogram $ concatMap (bigrams . map snd) taggedSentences
       wordTagHistogram = histogram taggedWords
-      transitionProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
-      wordLikelihoodProbs = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
-      model = HMM (M.keys tagHistogram) transitionProbs wordLikelihoodProbs
+      transitionPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
+      wordLikelihoodPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
+      model = HMM (M.keys tagHistogram) transitionPr wordLikelihoodPr
 
-histogram :: (Ord a, Fractional prob) => [a] -> M.Map a prob
+histogram :: (Ord a, Fractional pr) => [a] -> M.Map a pr
 histogram = foldr (flip (M.insertWith (+)) 1) M.empty
 
 bigrams :: [Tag] -> [(Tag, Tag)]
@@ -125,16 +121,22 @@ viterbi (HMM tags transitionPr wordPr) sentence =
       tagLen = length tags
       tagRange = [0..tagLen-1]
       sentRange = [0..sentLen-1]
-      matrix = trace ("tags = " ++ show sentence) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [prob x y | x <- sentRange, y <- tagRange]
-      prob :: Int -> Int -> (Int, Double)
-      prob 0 _ = (0, 1)
-      prob si ti = (fst tagMax, snd tagMax * M.findWithDefault 0 (sentence!!si, tags!!ti) wordPr)
+      matrix = trace ("tags = " ++ show sentence) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
+
+      probability :: Int -> Int -> (Int, Double)
+      probability 0 _ = (0, 1)
+      probability si ti = (fst tagMax, snd tagMax * findPr (sentence!!si, tags!!ti) wordPr)
         where tagMax = tagmax si ti
+
       tagmax :: Int -> Int -> (Int, Double)
-      tagmax si ti = argmaxWithMax (\y -> M.findWithDefault 0 (tags!!ti, tags!!y) transitionPr * snd (matrix!(si-1, y))) tagRange
+      tagmax si ti = argmaxWithMax (\y -> findPr (tags!!ti, tags!!y) transitionPr * snd (matrix!(si-1, y))) tagRange
+
       traceback :: [Tag] -> (Int, Double) -> Int -> [Tag]
-      traceback resultTags _ 0 = reverse resultTags
+      traceback resultTags _ (-1) = reverse resultTags
       traceback resultTags (ti, _) index = traceback ((tags!!ti):resultTags) (matrix!(index, ti)) (index-1)
+
+findPr :: (Num v, Ord k) => k -> M.Map k v -> v
+findPr k = M.findWithDefault 0 k
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
