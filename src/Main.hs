@@ -158,6 +158,7 @@ viterbi (HMM tags transitionProbs wordProbs) sentence =
       sentLen = length sentence
       tagLen = length tags
       matrix = listArray ((0, 0), (sentLen, tagLen)) [prob x y | x <- [0..sentLen], y <- [0..tagLen]]
+      prob si ti = wordProbs!(sentence!si, tags!ti) * maximumBy (compare `on` fst) (transitionProbs!(tags!ti, tags!(ti-1)))
       traceback (_, tag) = 2
 
 ------------------------------------------------------------------------
