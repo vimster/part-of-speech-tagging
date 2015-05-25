@@ -16,6 +16,7 @@ import           System.IO                  ()
 import           System.Random              (newStdGen)
 import qualified System.Random.Shuffle      as Shuffler
 import           Text.XML.Light
+import Data.Maybe
 
 import           Debug.Trace
 --
@@ -74,15 +75,15 @@ readDir path = do
   directory <- getCurrentDirectory
   filter isRegularFile <$> getDirectoryContents (directory ++ "/" ++ path)
 
-parseXml :: String -> [Sentence]
+parseXml :: String -> [TaggedSentence]
 parseXml source =
   let contents = parseXML source
       sentenceValues = concatMap (findElements $ simpleName "sentence") (onlyElems contents)
       sentences = map (findElements $ simpleName "tok") sentenceValues
-      nestedWords = map (map strContent) sentences
+      nestedWords = map (map (\x -> (strContent x, fromJust $ findAttr (simpleName "cat") x))) sentences
       simpleName s = QName s Nothing Nothing
   in
-    map ("<s>":) nestedWords
+    map (("<s>", "BOS"):) $ nestedWords
 
 
 ------------------------------------------------------------------------
@@ -183,6 +184,11 @@ main = do
   let (model, test) = splitIntoModelAndTest contents
       modelSentences = concatMap parseXml model
       testModelSentences = concatMap parseXml test
+      hmm = train modelSentences
+      prec = precision testModelSentences hmm
+  print testModelSentences
+  print hmm
   putStr "precision: "
+  print prec
 
 
