@@ -1,5 +1,5 @@
-# Perplexity calculator
-Tool for calculating the perplexity of a laguage model.
+# Part of Speech Tagging
+Tool for tagging part-of-speech using the Hidden Markov Model and the Viterbi algorithm.
 
 ## Usage
 Copy the xml corpus files into the root folder named corpus.
@@ -12,4 +12,4 @@ $ cabal install
 $ cabal run
 
 ## Results on Genia corpus (Treebank)
-Perplexity = ~ 44.31
+Precision = ~ 57.93%

@@ -5,6 +5,7 @@ import           Data.Array
 import           Data.List                  (maximumBy)
 import           Data.List.Extras.Argmax
 import qualified Data.Map                   as M
+import           Data.Maybe
 import qualified Data.MemoCombinators       as Memo
 import           Data.MemoCombinators.Class
 import           Data.Ord
@@ -16,7 +17,6 @@ import           System.IO                  ()
 import           System.Random              (newStdGen)
 import qualified System.Random.Shuffle      as Shuffler
 import           Text.XML.Light
-import Data.Maybe
 
 import           Debug.Trace
 --
@@ -98,15 +98,15 @@ train taggedSentences = model
       tagHistogram = histogram $ map snd taggedWords
       tagBigramHistogram = histogram $ concatMap (bigrams . map snd) taggedSentences
       wordTagHistogram = histogram taggedWords
-      transitionPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
-      wordLikelihoodPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
+      transitionPr = M.mapWithKey (\(_, tag) v -> v / lookupHistogram tagHistogram tag) tagBigramHistogram
+      wordLikelihoodPr = M.mapWithKey (\(_, tag) v -> v / lookupHistogram tagHistogram tag) wordTagHistogram
       model = HMM (filter (/= "BOS") (M.keys tagHistogram)) transitionPr wordLikelihoodPr
 
 histogram :: (Ord a, Fractional pr) => [a] -> M.Map a pr
 histogram = foldr (flip (M.insertWith (+)) 1) M.empty
 
 bigrams :: [Tag] -> [(Tag, Tag)]
-bigrams tags = zip tags $ tail tags
+bigrams tags = zip (tail tags) tags
 
 lookupHistogram :: (Ord k, Num v) => M.Map k v -> k -> v
 lookupHistogram hist key =
@@ -125,7 +125,7 @@ viterbi (HMM tags transitionPr wordPr) sentence =
       tagLen = length tags
       tagRange = [0..tagLen-1]
       sentRange = [0..sentLen-1]
-      matrix = trace ("tags = " ++ show tags) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
+      matrix = listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
 
       probability :: Int -> Int -> (Int, Double)
       probability 0 _ = (0, 1)
@@ -186,8 +186,6 @@ main = do
       testModelSentences = concatMap parseXml test
       hmm = train modelSentences
       prec = precision testModelSentences hmm
-  print testModelSentences
-  print hmm
   putStr "precision: "
   print prec
 
