@@ -51,10 +51,13 @@ data HMM = HMM [Tag] TagTransitionPr WordLikelihoodPr deriving(Show)
 --  test data
 ------------------------------------------------------------------------
 testSentence :: TaggedSentence
-testSentence = [("<s>", "<s>"), ("Ein", "PR"), ("Haus", "NN"), ("im", "PR"), ("Wald", "NN")]
+testSentence = [("<s>", "BOS"), ("Ein", "PR"), ("Haus", "NN"), ("im", "PR"), ("Wald", "NN")]
 testSentence1 :: Sentence
 testSentence1 = ["Alles", "Klar", "Ein", "Haus"]
+testSentence2 :: Sentence
+testSentence2 = ["<s>", "Ein", "Haus", "im", "Wald"]
 
+hmm = train [testSentence]
 
 ------------------------------------------------------------------------
 --  IO
@@ -96,7 +99,7 @@ train taggedSentences = model
       wordTagHistogram = histogram taggedWords
       transitionPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) tagBigramHistogram
       wordLikelihoodPr = M.mapWithKey (\(_, tag) v -> (v + 1) / lookupHistogram tagHistogram tag) wordTagHistogram
-      model = HMM (M.keys tagHistogram) transitionPr wordLikelihoodPr
+      model = HMM (filter (/= "BOS") (M.keys tagHistogram)) transitionPr wordLikelihoodPr
 
 histogram :: (Ord a, Fractional pr) => [a] -> M.Map a pr
 histogram = foldr (flip (M.insertWith (+)) 1) M.empty
@@ -106,7 +109,7 @@ bigrams tags = zip tags $ tail tags
 
 lookupHistogram :: (Ord k, Num v) => M.Map k v -> k -> v
 lookupHistogram hist key =
-  M.findWithDefault 0 key hist + 1
+  M.findWithDefault 0 key hist
 
 
 ------------------------------------------------------------------------
@@ -115,13 +118,13 @@ lookupHistogram hist key =
 
 viterbi :: HMM -> Sentence -> [Tag]
 viterbi (HMM tags transitionPr wordPr) sentence =
-  traceback [] (maximumBy (comparing snd) $ map (\ti -> matrix!(sentLen-1, ti)) tagRange) (sentLen-1)
+  traceback [] (maximumBy (comparing (\ti -> snd $ matrix!(sentLen-1, ti))) tagRange) (sentLen-1)
     where
       sentLen = length sentence
       tagLen = length tags
       tagRange = [0..tagLen-1]
       sentRange = [0..sentLen-1]
-      matrix = trace ("tags = " ++ show sentence) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
+      matrix = trace ("tags = " ++ show tags) $ listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
 
       probability :: Int -> Int -> (Int, Double)
       probability 0 _ = (0, 1)
@@ -131,12 +134,27 @@ viterbi (HMM tags transitionPr wordPr) sentence =
       tagmax :: Int -> Int -> (Int, Double)
       tagmax si ti = argmaxWithMax (\y -> findPr (tags!!ti, tags!!y) transitionPr * snd (matrix!(si-1, y))) tagRange
 
-      traceback :: [Tag] -> (Int, Double) -> Int -> [Tag]
-      traceback resultTags _ (-1) = reverse resultTags
-      traceback resultTags (ti, _) index = traceback ((tags!!ti):resultTags) (matrix!(index, ti)) (index-1)
+      traceback :: [Tag] -> Int -> Int -> [Tag]
+      traceback resultTags _ 0 = resultTags
+      traceback resultTags ti index = traceback ((tags!!ti):resultTags) (fst (matrix!(index, ti))) (index-1)
 
 findPr :: (Num v, Ord k) => k -> M.Map k v -> v
-findPr k = M.findWithDefault 0 k
+findPr = M.findWithDefault 0
+
+
+------------------------------------------------------------------------
+--  Evaluation
+------------------------------------------------------------------------
+
+precision :: Fractional tp => [TaggedSentence] -> HMM -> tp
+precision testSentences hmm = truePositiveCount / fromIntegral (length result)
+  where
+    sentences = map (map fst) testSentences
+    expectedTags = filter (/= "BOS") $ concatMap (map snd) testSentences
+    bestTagSequences = concatMap (viterbi hmm) sentences
+    result = zipWith (==) expectedTags bestTagSequences
+    truePositiveCount = fromIntegral $ length $ filter (==True) result
+
 
 ------------------------------------------------------------------------
 --  Train-Test model separation
