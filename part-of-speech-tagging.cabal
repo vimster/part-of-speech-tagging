@@ -30,6 +30,5 @@ executable part-of-speech-tagging
                        filepath,
                        array,
                        list-extras,
-                       data-memocombinators, 
                        xml
 

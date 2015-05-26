@@ -2,24 +2,18 @@ module Main where
 
 import           Control.Applicative
 import           Data.Array
-import           Data.List                  (maximumBy)
+import           Data.List               (maximumBy)
 import           Data.List.Extras.Argmax
-import qualified Data.Map                   as M
+import qualified Data.Map                as M
 import           Data.Maybe
-import qualified Data.MemoCombinators       as Memo
-import           Data.MemoCombinators.Class
 import           Data.Ord
-import           System.Directory           (getCurrentDirectory,
-                                             getDirectoryContents)
-import           System.Environment
+import           System.Directory        (getCurrentDirectory,
+                                          getDirectoryContents)
 import           System.FilePath
-import           System.IO                  ()
-import           System.Random              (newStdGen)
-import qualified System.Random.Shuffle      as Shuffler
+import           System.IO               ()
+import           System.Random           (newStdGen)
+import qualified System.Random.Shuffle   as Shuffler
 import           Text.XML.Light
-
-import           Debug.Trace
---
 
 ------------------------------------------------------------------------
 --  Constants
@@ -32,15 +26,16 @@ modelTestRatio = 0.9
 ------------------------------------------------------------------------
 type Word = String
 type Tag = String
+type Pr = Double
 type TaggedWord = (Word, Tag)
 type Sentence = [Word]
 type TaggedSentence = [TaggedWord]
 type Bigram = (Tag, Tag)
 type Frequencies = M.Map (Word, Word) Integer
-type TagTransitionPr = M.Map (Tag, Tag) Double
-type WordLikelihoodPr = M.Map (Word, Tag) Double
-type TagHistogram = M.Map Tag Double
-type WordTagHistogram = M.Map (Word, Tag) Double
+type TagTransitionPr = M.Map (Tag, Tag) Pr
+type WordLikelihoodPr = M.Map (Word, Tag) Pr
+type TagHistogram = M.Map Tag Int
+type WordTagHistogram = M.Map (Word, Tag) Int
 
 
 ------------------------------------------------------------------------
@@ -49,22 +44,8 @@ type WordTagHistogram = M.Map (Word, Tag) Double
 data HMM = HMM [Tag] TagTransitionPr WordLikelihoodPr deriving(Show)
 
 ------------------------------------------------------------------------
---  test data
-------------------------------------------------------------------------
-testSentence :: TaggedSentence
-testSentence = [("<s>", "BOS"), ("Ein", "PR"), ("Haus", "NN"), ("im", "PR"), ("Wald", "NN")]
-testSentence1 :: Sentence
-testSentence1 = ["Alles", "Klar", "Ein", "Haus"]
-testSentence2 :: Sentence
-testSentence2 = ["<s>", "Ein", "Haus", "im", "Wald"]
-
-hmm = train [testSentence]
-
-------------------------------------------------------------------------
 --  IO
 ------------------------------------------------------------------------
--- corpusPath :: FilePath
--- corpusPath = "corpus/"
 
 isRegularFile :: FilePath -> Bool
 isRegularFile f = f /= "." && f /= ".." && takeExtension f == ".xml"
@@ -83,7 +64,7 @@ parseXml source =
       nestedWords = map (map (\x -> (strContent x, fromJust $ findAttr (simpleName "cat") x))) sentences
       simpleName s = QName s Nothing Nothing
   in
-    map (("<s>", "BOS"):) $ nestedWords
+    map (("<s>", "BOS"):) nestedWords
 
 
 ------------------------------------------------------------------------
@@ -92,26 +73,21 @@ parseXml source =
 ------------------------------------------------------------------------
 
 train :: [TaggedSentence] -> HMM
-train taggedSentences = model
+train taggedSentences = HMM (filter (/= "BOS") (M.keys tagHistogram)) transitionPr wordLikelihoodPr
     where
       taggedWords = concat taggedSentences
       tagHistogram = histogram $ map snd taggedWords
       tagBigramHistogram = histogram $ concatMap (bigrams . map snd) taggedSentences
       wordTagHistogram = histogram taggedWords
-      transitionPr = M.mapWithKey (\(_, tag) v -> v / lookupHistogram tagHistogram tag) tagBigramHistogram
-      wordLikelihoodPr = M.mapWithKey (\(_, tag) v -> v / lookupHistogram tagHistogram tag) wordTagHistogram
-      model = HMM (filter (/= "BOS") (M.keys tagHistogram)) transitionPr wordLikelihoodPr
+      tagMapFunc (_, tag) v = fromIntegral v / fromIntegral (M.findWithDefault 0 tag tagHistogram)
+      transitionPr = M.mapWithKey tagMapFunc tagBigramHistogram
+      wordLikelihoodPr = M.mapWithKey tagMapFunc wordTagHistogram
 
-histogram :: (Ord a, Fractional pr) => [a] -> M.Map a pr
+histogram :: (Ord a) => [a] -> M.Map a Int
 histogram = foldr (flip (M.insertWith (+)) 1) M.empty
 
 bigrams :: [Tag] -> [(Tag, Tag)]
 bigrams tags = zip (tail tags) tags
-
-lookupHistogram :: (Ord k, Num v) => M.Map k v -> k -> v
-lookupHistogram hist key =
-  M.findWithDefault 0 key hist
-
 
 ------------------------------------------------------------------------
 --  Viterbi
@@ -137,17 +113,17 @@ viterbi (HMM tags transitionPr wordPr) sentence =
 
       traceback :: [Tag] -> Int -> Int -> [Tag]
       traceback resultTags _ 0 = resultTags
-      traceback resultTags ti index = traceback ((tags!!ti):resultTags) (fst (matrix!(index, ti))) (index-1)
+      traceback resultTags ti si = traceback ((tags!!ti):resultTags) (fst (matrix!(si, ti))) (si-1)
 
-findPr :: (Num v, Ord k) => k -> M.Map k v -> v
-findPr = M.findWithDefault 0
+findPr :: (Fractional v, Ord k) => k -> M.Map k v -> v
+findPr = M.findWithDefault 0.00001
 
 
 ------------------------------------------------------------------------
 --  Evaluation
 ------------------------------------------------------------------------
 
-precision :: Fractional tp => [TaggedSentence] -> HMM -> tp
+precision :: [TaggedSentence] -> HMM -> Double
 precision testSentences hmm = truePositiveCount / fromIntegral (length result)
   where
     sentences = map (map fst) testSentences
@@ -184,9 +160,8 @@ main = do
   let (model, test) = splitIntoModelAndTest contents
       modelSentences = concatMap parseXml model
       testModelSentences = concatMap parseXml test
-      hmm = train modelSentences
-      prec = precision testModelSentences hmm
-  putStr "precision: "
-  print prec
+      hiddenMarkovModel = train modelSentences
+  putStr "Precision: "
+  print $ precision testModelSentences hiddenMarkovModel
 
 

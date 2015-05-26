@@ -12,4 +12,4 @@ $ cabal install
 $ cabal run
 
 ## Results on Genia corpus (Treebank)
-Precision = ~ 57.93%
+Precision = ~ 94.78%
