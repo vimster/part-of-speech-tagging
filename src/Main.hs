@@ -103,12 +103,12 @@ viterbi (HMM tags transitionPr wordPr) sentence =
       sentRange = [0..sentLen-1]
       matrix = listArray ((0, 0), (sentLen-1, tagLen-1)) [probability x y | x <- sentRange, y <- tagRange]
 
-      probability :: Int -> Int -> (Int, Double)
+      probability :: Int -> Int -> (Int, Pr)
       probability 0 _ = (0, 1)
       probability si ti = (fst tagMax, snd tagMax * findPr (sentence!!si, tags!!ti) wordPr)
         where tagMax = tagmax si ti
 
-      tagmax :: Int -> Int -> (Int, Double)
+      tagmax :: Int -> Int -> (Int, Pr)
       tagmax si ti = argmaxWithMax (\y -> findPr (tags!!ti, tags!!y) transitionPr * snd (matrix!(si-1, y))) tagRange
 
       traceback :: [Tag] -> Int -> Int -> [Tag]
@@ -123,7 +123,7 @@ findPr = M.findWithDefault 0.00001
 --  Evaluation
 ------------------------------------------------------------------------
 
-precision :: [TaggedSentence] -> HMM -> Double
+precision :: [TaggedSentence] -> HMM -> Pr
 precision testSentences hmm = truePositiveCount / fromIntegral (length result)
   where
     sentences = map (map fst) testSentences
